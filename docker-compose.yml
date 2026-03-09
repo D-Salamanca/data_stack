@@ -15,18 +15,28 @@ services:
       - minio_data:/data
 
   nessie:
-    image: projectnessie/nessie:latest
+    image: ghcr.io/projectnessie/nessie:latest
     container_name: fhbd-nessie
+    user: root
     ports:
       - "19120:19120"
+    env_file:
+      - ./.env
     environment:
       - NESSIE_SERVER_AUTHENTICATION_ENABLED=false
       - QUARKUS_HTTP_PORT=19120
-      # Persistencia del catálogo (RocksDB)
-      - nessie.version.store.type=ROCKSDB
-      - nessie.version.store.persist.rocks.database-path=/var/lib/nessie/rocksdb
-    volumes:
-      - nessie_data:/var/lib/nessie
+      - NESSIE_VERSION_STORE_TYPE=IN_MEMORY
+      - NESSIE_CATALOG_DEFAULT_WAREHOUSE=warehouse
+      - NESSIE_CATALOG_WAREHOUSES_WAREHOUSE_LOCATION=s3://iceberg
+      - NESSIE_CATALOG_SERVICE_S3_DEFAULT_OPTIONS_REGION=us-east-1
+      - NESSIE_CATALOG_SERVICE_S3_DEFAULT_OPTIONS_ENDPOINT=http://fhbd-minio:9000
+      - NESSIE_CATALOG_SERVICE_S3_DEFAULT_OPTIONS_PATH_STYLE_ACCESS=true
+      - NESSIE_CATALOG_SERVICE_S3_DEFAULT_OPTIONS_AUTH_TYPE=application-global
+      - AWS_ACCESS_KEY_ID=${MINIO_ACCESS_KEY}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_SECRET_KEY}
+      - AWS_REGION=us-east-1
+    depends_on:
+      - minio
 
   clickhouse:
     image: clickhouse/clickhouse-server:latest
@@ -45,23 +55,31 @@ services:
     environment:
       - JUPYTER_TOKEN=fhbd
 
-      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ENDPOINT=http://fhbd-minio:9000
       - MINIO_BUCKET=raw
+      - MINIO_BUCKET_RAW=raw
+      - MINIO_BUCKET_ICEBERG=iceberg
       - MINIO_OBJECT_KEY=nyc/yellow_tripdata_2025-01.parquet
       - PARQUET_URL=https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2025-01.parquet
 
-      # paths de docker secrets dentro del contenedor
-      - MINIO_ACCESS_KEY_FILE=/run/secrets/minio_access_key
-      - MINIO_SECRET_KEY_FILE=/run/secrets/minio_secret_key
+      # Credenciales MinIO desde .env
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+
+      # Nessie
+      - NESSIE_URL=http://fhbd-nessie:19120/iceberg
+      - NESSIE_BRANCH=main
+
+      # Iceberg
+      - ICEBERG_NAMESPACE=nyc
+      - ICEBERG_TABLE=yellow_tripdata
 
     volumes:
       - ./scripts:/home/jovyan/scripts
       - ./notebooks:/home/jovyan/notebooks
       - ./data:/home/jovyan/data
       - ./requirements.txt:/home/jovyan/requirements.txt:ro
-    secrets:
-      - minio_access_key
-      - minio_secret_key
+      - ./.env:/home/jovyan/.env
     depends_on:
       - minio
       - nessie
@@ -69,12 +87,6 @@ services:
     command: >
       bash -lc "pip install -r /home/jovyan/requirements.txt &&
       start-notebook.py --NotebookApp.token=$${JUPYTER_TOKEN}"
-
-secrets:
-  minio_access_key:
-    file: ./secrets/minio_access_key
-  minio_secret_key:
-    file: ./secrets/minio_secret_key
 
 volumes:
   minio_data:
