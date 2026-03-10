@@ -13,6 +13,7 @@ __pycache__/
 # Jupyter
 # =========================
 .ipynb_checkpoints/
+.dlt/
 
 # =========================
 # Data files (no subir datasets)
