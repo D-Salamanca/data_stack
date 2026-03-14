@@ -44,8 +44,17 @@ services:
     ports:
       - "8123:8123"   # HTTP
       - "9002:9000"   # Native (mapped)
+    environment:
+      - CLICKHOUSE_SKIP_USER_SETUP=1
+      - CLICKHOUSE_DB=${CLICKHOUSE_DATABASE:-lakehouse}
     volumes:
       - clickhouse_data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
   jupyter:
     image: jupyter/base-notebook:latest
@@ -73,6 +82,14 @@ services:
       # Iceberg
       - ICEBERG_NAMESPACE=nyc
       - ICEBERG_TABLE=yellow_tripdata
+
+      # ClickHouse interno para scripts/notebooks dentro del contenedor
+      - CLICKHOUSE_HOST=fhbd-clickhouse
+      - CLICKHOUSE_PORT=8123
+      - CLICKHOUSE_NATIVE_PORT=9000
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_PASSWORD=
+      - CLICKHOUSE_DATABASE=${CLICKHOUSE_DATABASE:-lakehouse}
 
     volumes:
       - ./scripts:/home/jovyan/scripts
